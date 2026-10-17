@@ -1,0 +1,62 @@
+name: "Run unit tests"
+
+on:
+  - push
+  - pull_request
+
+env:
+  COMPOSER_MEMORY_LIMIT: -1
+
+jobs:
+  test:
+    name: "Lara ${{ matrix.laravel }} PHP ${{ matrix.php }} Unit ${{ matrix.phpunit }}"
+    runs-on: ubuntu-latest
+    strategy:
+      max-parallel: 6 # 12
+      fail-fast: false
+      matrix:
+        laravel: [10, 11, 12]
+        php: ['8.2', '8.3', '8.4']
+        phpunit: [10, 11]
+        exclude:
+          - {laravel: 10, php: '8.4'}
+          - {laravel: 10, phpunit: 11}
+          - {laravel: 12, phpunit: 10}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v3
+        with:
+          fetch-depth: 2
+
+      - name: Setup PHP ${{ matrix.php }}
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: ${{ matrix.php }}
+          extensions: exif,json,mbstring,dom
+
+      - name: Get user-level Composer cache
+        id: composer-cache
+        run: echo "dir=$(composer config cache-files-dir)" >> $GITHUB_OUTPUT
+
+      - name: Setup Composer cache
+        uses: actions/cache@v3
+        with:
+          path: ${{ steps.composer-cache.outputs.dir }}
+          key: composer-${{ runner.os }}-${{ matrix.php }}-${{ matrix.laravel }}-${{ hashFiles('**/composer.json') }}
+          restore-keys: |
+            composer-${{ runner.os }}-${{ matrix.php }}-${{ matrix.laravel }}-${{ env.cache-name }}-
+            composer-${{ runner.os }}-${{ matrix.php }}-${{ matrix.laravel }}-
+            composer-${{ runner.os }}-${{ matrix.php }}-
+            composer-${{ runner.os }}-
+
+      - name: Install composer dependencies
+        run: composer require --no-progress --no-interaction illuminate/database:^${{ matrix.laravel }}.0 illuminate/validation:^${{ matrix.laravel }}.0 phpunit/phpunit:^${{ matrix.phpunit }}.0
+
+      - name: Run unit tests
+        run: vendor/bin/phpunit --coverage-text --coverage-clover=coverage.clover
+
+      # - name: Upload to Scrutinizer
+      #   continue-on-error: true
+      #   run: |
+      #     composer global require scrutinizer/ocular
+      #     ~/.composer/vendor/bin/ocular code-coverage:upload --format=php-clover coverage.clover
